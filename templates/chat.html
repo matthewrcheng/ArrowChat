@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>ArrowChat</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f4f4f4;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+            }
+            .chat {
+                width: 50%;
+                max-width: 600px;
+                background-color: #ffffff;
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                border-radius: 8px;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+                height: 80vh;
+            }
+            #messages {
+                list-style: none;
+                padding: 10px;
+                margin: 0;
+                height: 80%;
+                overflow-y: auto;
+                border-bottom: 1px solid #ddd;
+                flex-grow: 1;
+            }
+            #messages li {
+                padding: 10px;
+                margin-bottom: 10px;
+                background-color: #f1f1f1;
+                border-radius: 4px;
+                word-wrap: break-word;
+                white-space: pre-wrap;
+            }
+            #messages li.sent {
+                background-color: #e1ffc7;
+                align-self: flex-end;
+                text-align: right;
+            }
+            #messages li.received {
+                background-color: #f1f1f1;
+                align-self: flex-start;
+                text-align: left;
+            }
+            #messages li.displayName {
+                background-color: #a0a0a0;
+                align-self: center;
+                text-align: center;
+            }
+            #chatbox {
+                display: flex;
+                padding: 10px;
+            }
+            #chatbox textarea {
+                width: 100%;
+                height: 50px;
+                resize: none;
+                padding: 10px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                margin-right: 10px;
+            }
+            #chatbox input[type="submit"] {
+                padding: 10px 20px;
+                background-color: #007bff;
+                color: #fff;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+            #chatbox input[type="submit"]:hover {
+                background-color: #0056b3;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="chat">
+            <ul id="messages"></ul>
+            <form id="chatbox">
+                <textarea></textarea>
+                <input type="submit" value="Send" />
+            </form>
+
+            <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+            <script>
+
+                $(function(){
+                    var socket = null;
+                    var lastMessage = {displayName: null};
+                    var lastElement = null;
+                    var msgBox = $("#chatbox textarea");
+                    var messages = $("#messages");
+                    var myMessages = {};
+                    var displayName = localStorage.getItem("displayName") || "Anonymous";
+
+                    $("#chatbox").submit(function(){
+
+                        if (!msgBox.val()) return false;
+                        if (!socket) {
+                            alert("Error: There is no socket connection.");
+                            return false;
+                        }
+
+                        sendMessage();
+                        return false;
+                    });
+
+                    msgBox.on("keydown", function(event) {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                            event.preventDefault();
+                            $("#chatbox").submit();
+                        }
+                    })
+
+                    function sendMessage() {
+                        var message = msgBox.val().trim();
+                        if (message) {
+                            var data = {
+                                type: "message",
+                                value: message,
+                                displayName: displayName
+                            };
+                            socket.send(JSON.stringify(data));
+                            addMessage(data, 'sent');
+                            msgBox.val("");
+                            scrollToBottom();
+                        }
+                    }
+
+                    function addMessage(data, type) {
+                        var msgElement = null;
+                        if (lastMessage.displayName === data.displayName) {
+                            msgElement = lastElement;
+                            msgElement.append("\n" + data.value);
+                        } else {
+                            msgElement = $("<li>").addClass(type).text(data.value);
+                            if (type === 'sent' || type === 'received') {
+                                msgElement.prepend($("<span class='displayName'>").text(data.displayName + ": "));
+                            }
+                            messages.append(msgElement);
+                            lastElement = msgElement;
+                        }
+                        if (type === 'sent') {
+                            myMessages[data] = true;
+                        }
+                        scrollToBottom();
+                        lastMessage = data;
+                    }
+
+                    function scrollToBottom() {
+                        messages.scrollTop(messages[0].scrollHeight);
+                    }
+
+                    if (!window["WebSocket"]) {
+                        alert("Error: Your browser does not support web sockets.")
+                    } else {
+                        socket = new WebSocket("ws://{{.Host}}/room");
+                        socket.onclose = function() {
+                            socket.send(JSON.stringify({type: "displayName", value: `${displayName} left the chat`}));
+                            alert("Connection has been closed.");
+                        }
+                        socket.onmessage = function(e) {
+                            var data = JSON.parse(e.data);
+                            if (!myMessages[data]) {
+                                if (data.type === 'message') {
+                                    addMessage(data, 'received');
+                                } else {
+                                    addMessage(data, data.type);
+                                }
+                            } else {
+                                delete myMessages[data];  // Remove message from tracking after it is received
+                            }
+                        }
+                        socket.onopen = function(e) {
+                            socket.send(JSON.stringify({type: "displayName", value: `${displayName} joined the chat`}));
+                        }
+                    }
+                });
+            </script>
+        </div>
+    </body>
+</html>
